@@ -62,7 +62,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
     <ClientCtx.Provider value={{ profile, tenantId }}>
       <header className="cl-top">
         <div className="container row">
-          <Brand size={150} />
+          <Brand size={110} />
           <nav className="cl-topnav">
             {TABS.map((t) => <Link key={t.href} href={t.href} className={on(t.href) ? "on" : ""}>{t.label}</Link>)}
           </nav>

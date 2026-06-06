@@ -42,7 +42,7 @@ export default function AdminLayout({ title, children }: { title: string; childr
     <div className="adm">
       <header className="adm-top">
         <div className="container row">
-          <Brand size={150} />
+          <Brand size={110} />
           <nav className="adm-topnav">
             {TABS.map((t) => <Link key={t.href} href={t.href} className={on(t.href) ? "on" : ""}>{t.label}</Link>)}
           </nav>
