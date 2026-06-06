@@ -29,7 +29,7 @@ export default function Home() {
         <div className="lp-frame" aria-hidden />
 
         <header className="lp-nav">
-          <Brand size={26} />
+          <Brand size={50} />
           <div className="lp-navr">
             <span className="mono dim">SAN JOSÉ · CR</span>
             <Link href="/login" className="lp-enter">Ingresar <span className="arr">→</span></Link>
