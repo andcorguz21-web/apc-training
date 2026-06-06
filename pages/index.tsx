@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import Brand from "@/components/Brand";
 
 type BrandT = { name: string; tagline: string | null; coach_name: string | null; brand_primary: string; brand_ink: string; brand_bg: string };
-const FALLBACK: BrandT = { name: "APC Hybrid Training", tagline: "Entrenamiento funcional adaptado a vos.", coach_name: "Axel Padilla", brand_primary: "#16a34a", brand_ink: "#0a0f0d", brand_bg: "#f2f0eb" };
+const FALLBACK: BrandT = { name: "APC Hybrid Training", tagline: "Coach con +5 años de experiencia, altamente certificado.", coach_name: "Axel Padilla", brand_primary: "#16a34a", brand_ink: "#0a0f0d", brand_bg: "#f2f0eb" };
 
 export default function Home() {
   const [brand, setBrand] = useState<BrandT>(FALLBACK);
@@ -38,7 +38,7 @@ export default function Home() {
 
         <section className="lp-hero">
           <div className="lp-herotext">
-            <span className="mono eyebrow"><i className="pulse" /> Reservas abiertas · entrenamiento funcional</span>
+            <span className="mono eyebrow"><i className="pulse" /> Entrenamiento funcional</span>
             <h1 className="lp-title">Entrená<br />con <em>intención</em><span className="per">.</span></h1>
             <p className="lp-sub">{brand.tagline}</p>
             <div className="lp-cta">
