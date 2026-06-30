@@ -102,7 +102,7 @@ export default function Resumen() {
           </section>
 
           <section className="dash-quick">
-            {[["/admin/agenda", "Agenda"], ["/admin/clientes", "Clientes"], ["/admin/horarios", "Horarios"], ["/admin/pagos", "Pagos"]].map(([h, l]) => (
+            {[["/admin/reservar", "Crear reserva"], ["/admin/agenda", "Agenda"], ["/admin/clientes", "Clientes"], ["/admin/horarios", "Horarios"], ["/admin/pagos", "Pagos"]].map(([h, l]) => (
               <Link key={h} href={h} className="dash-q">{l} <span className="arr">→</span></Link>
             ))}
           </section>

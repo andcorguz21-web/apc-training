@@ -9,6 +9,7 @@ const dISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d
 const estado = (s: string) => s === "approved" ? { t: "Aprobado", c: "var(--primary)" } : s === "rejected" ? { t: "Rechazado", c: "var(--danger)" } : { t: "Pendiente", c: "var(--amber)" };
 const bkSt: Record<string, string> = { confirmed: "Confirmada", pending: "Pendiente", cancelled: "Cancelada", attended: "Asistió", no_show: "No asistió" };
 const csvCell = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+const fechaCorta = (d?: string | null) => d ? noon(d).toLocaleDateString("es-CR", { day: "numeric", month: "long", year: "numeric" }) : null;
 
 export default function Clientes() {
   const [clients, setClients] = useState<any[]>([]);
@@ -17,31 +18,43 @@ export default function Clientes() {
   const [form, setForm] = useState<any>({});
   const [fb, setFb] = useState<any[]>([]);
   const [fp, setFp] = useState<any[]>([]);
+  const [mem, setMem] = useState<any>(null);
+  const [memPlans, setMemPlans] = useState<any[]>([]);
+  const [planSel, setPlanSel] = useState("");
+  const [activating, setActivating] = useState(false);
   const [busy, setBusy] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
     if (!supabase) return;
-    const [cl, pay] = await Promise.all([
-      supabase.from("profiles").select("id, full_name, phone, cedula, approval_status, created_at, notes").eq("role", "client").order("created_at", { ascending: false }),
+    const [cl, pay, mp] = await Promise.all([
+      supabase.from("profiles").select("id, full_name, phone, cedula, approval_status, created_at, notes, payment_date").eq("role", "client").order("created_at", { ascending: false }),
       supabase.from("payments").select("profile_id, amount_crc").eq("status", "verified"),
+      supabase.from("plans").select("id, name, price_crc").eq("type", "membership").eq("active", true).order("price_crc"),
     ]);
     setClients(cl.data ?? []);
     const m: Record<string, number> = {};
     (pay.data ?? []).forEach((p: any) => { m[p.profile_id] = (m[p.profile_id] || 0) + p.amount_crc; });
     setSpend(m);
+    setMemPlans(mp.data ?? []);
+    setPlanSel((prev) => prev || (mp.data?.[0]?.id ?? ""));
   }, []);
   useEffect(() => { load(); }, [load]);
 
   async function openFicha(c: any) {
-    setSel(c); setForm({ full_name: c.full_name || "", phone: c.phone || "", cedula: c.cedula || "", notes: c.notes || "" }); setFb([]); setFp([]); setMsg("");
+    setSel(c);
+    setForm({ full_name: c.full_name || "", phone: c.phone || "", cedula: c.cedula || "", notes: c.notes || "", payment_date: c.payment_date || "" });
+    setFb([]); setFp([]); setMem(null); setMsg("");
     if (!supabase) return;
-    const [bk, py] = await Promise.all([
+    const [bk, py, mmq] = await Promise.all([
       supabase.from("bookings").select("id, status, booked_at, class_sessions ( date, start_time, end_time )").eq("profile_id", c.id).order("booked_at", { ascending: false }),
       supabase.from("payments").select("id, amount_crc, status, created_at").eq("profile_id", c.id).order("created_at", { ascending: false }),
+      supabase.from("membership_members").select("memberships ( status, end_date, plans ( name ) )").eq("profile_id", c.id),
     ]);
     setFb(bk.data ?? []); setFp(py.data ?? []);
+    const act = (mmq.data ?? []).map((r: any) => r.memberships).find((x: any) => x && x.status === "active");
+    setMem(act || null);
   }
 
   async function setStatus(id: string, status: string) {
@@ -53,15 +66,26 @@ export default function Clientes() {
 
   async function guardar() {
     if (!supabase || !sel) return; setSaving(true); setMsg("");
-    const { error } = await supabase.from("profiles").update(form).eq("id", sel.id);
+    const { error } = await supabase.from("profiles").update({ ...form, payment_date: form.payment_date || null }).eq("id", sel.id);
     setSaving(false);
     if (error) { setMsg("Error: " + error.message); return; }
     setMsg("Guardado ✓"); await load(); setSel((s: any) => ({ ...s, ...form }));
   }
 
+  async function activarMes() {
+    if (!supabase || !sel) return;
+    const plan = planSel || memPlans[0]?.id;
+    if (!plan) { setMsg("No hay plan de mensualidad configurado."); return; }
+    setActivating(true); setMsg("");
+    const { error } = await supabase.rpc("admin_grant_membership", { p_profile_id: sel.id, p_plan_id: plan, p_payment_date: form.payment_date || null });
+    setActivating(false);
+    if (error) { setMsg("Error: " + error.message); return; }
+    setMsg("Mes activado ✓"); await openFicha(sel); await load();
+  }
+
   function exportCSV() {
-    const header = ["Nombre", "Teléfono", "Cédula", "Estado", "Registro", "Total pagado (CRC)"];
-    const rows = clients.map((c) => [c.full_name, c.phone, c.cedula, estado(c.approval_status).t, new Date(c.created_at).toLocaleDateString("es-CR"), spend[c.id] || 0]);
+    const header = ["Nombre", "Teléfono", "Cédula", "Estado", "Fecha de pago", "Registro", "Total pagado (CRC)"];
+    const rows = clients.map((c) => [c.full_name, c.phone, c.cedula, estado(c.approval_status).t, c.payment_date ? new Date(c.payment_date).toLocaleDateString("es-CR") : "", new Date(c.created_at).toLocaleDateString("es-CR"), spend[c.id] || 0]);
     const csv = [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -126,6 +150,21 @@ export default function Clientes() {
               {msg && <span className="saved" style={{ color: msg.startsWith("Error") ? "var(--danger)" : "var(--primary)" }}>{msg}</span>}
             </div>
 
+            <h3 className="sec">Acceso a reservas</h3>
+            <div className="fld"><label>Fecha de pago</label>
+              <input className="input" type="date" value={form.payment_date} onChange={(e) => setForm({ ...form, payment_date: e.target.value })} />
+            </div>
+            <p className="acc">{mem ? `Puede reservar hasta el ${fechaCorta(mem.end_date)} (incluye 3 días de gracia).` : "Sin mensualidad activa. No puede reservar hasta activarle el mes."}</p>
+            <div className="savebar">
+              {memPlans.length > 1 && (
+                <select className="input" style={{ maxWidth: 200 }} value={planSel} onChange={(e) => setPlanSel(e.target.value)}>
+                  {memPlans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              )}
+              <button className="btn btn-primary btn-sm" disabled={activating} onClick={activarMes}>{activating ? "Activando…" : "Activar mes desde fecha de pago"}</button>
+            </div>
+            <p className="acc dimacc">Al verificar el SINPE en Pagos se hace lo mismo automáticamente: 1 mes desde la fecha de pago + 3 días de gracia.</p>
+
             <h3 className="sec">Reservas ({fb.length})</h3>
             {fb.length === 0 ? <p className="empty2">Sin reservas.</p> : (
               <div className="hist">
@@ -181,6 +220,8 @@ export default function Clientes() {
         .ta{resize:vertical;font-family:inherit;line-height:1.5}
         .savebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
         .saved{font-size:13px;font-weight:600}
+        .acc{font-size:13px;color:var(--muted);margin:2px 0 12px;line-height:1.5}
+        .dimacc{color:var(--faint);font-size:12px}
         .hist{display:flex;flex-direction:column;gap:6px}
         .hrow{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 13px;font-size:13.5px}
         .hs{font-weight:600;font-size:12.5px;color:var(--muted)}
