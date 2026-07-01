@@ -10,6 +10,10 @@ const hhmm = (t: string) => String(t).slice(0, 5);
 const localISO = (n = 0) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const noon = (d: string) => new Date(d + "T12:00:00");
 const dayFull = (d: string) => noon(d).toLocaleDateString("es-CR", { weekday: "long", day: "numeric", month: "long" });
+
+// Horas que NO se muestran en el calendario del cliente (11am, 12pm, 1pm, 2pm)
+const HIDDEN_HOURS = ["11", "12", "13", "14"];
+
 function mapError(msg: string) {
   const m = msg.toUpperCase();
   if (m.includes("CLASS_FULL")) return "Esa clase ya se llenó.";
@@ -36,13 +40,17 @@ function Reservar() {
 
   const loadAll = useCallback(async (tid: string) => {
     if (!supabase || !tid) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const uid = user?.id;
     const [cls, bk, mm] = await Promise.all([
       supabase.from("class_sessions").select("id, date, start_time, end_time, capacity, booked_count")
         .eq("tenant_id", tid).eq("status", "scheduled").gte("date", localISO(0)).lte("date", localISO(7)).order("date").order("start_time"),
-      supabase.from("bookings").select("id, class_session_id, status").in("status", ["pending", "confirmed", "attended"]),
+      supabase.from("bookings").select("id, class_session_id, status")
+        .eq("profile_id", uid).in("status", ["pending", "confirmed", "attended"]),
       supabase.from("memberships").select("id, start_date, end_date").eq("status", "active"),
     ]);
-    setClasses((cls.data as Cls[]) ?? []);
+    const visible = ((cls.data as Cls[]) ?? []).filter((c) => !HIDDEN_HOURS.includes(String(c.start_time).slice(0, 2)));
+    setClasses(visible);
     const map: Record<string, Bk> = {}; ((bk.data as Bk[]) ?? []).forEach((b) => (map[b.class_session_id] = b)); setMyBk(map);
     setMems((mm.data as Mem[]) ?? []);
   }, []);
@@ -59,8 +67,10 @@ function Reservar() {
   }
   async function cancelar(id: string) {
     if (!supabase) return; setBusy(id);
-    await supabase.from("bookings").update({ status: "cancelled", cancelled_at: new Date().toISOString() }).eq("id", id);
-    setBusy(""); await loadAll(tenantId);
+    const { error } = await supabase.rpc("cancel_my_booking", { p_booking_id: id });
+    setBusy("");
+    if (error) { setMsg("No se pudo cancelar. Reintentá."); return; }
+    await loadAll(tenantId);
   }
 
   const list = byDay[selected] || [];

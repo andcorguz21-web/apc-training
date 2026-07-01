@@ -18,8 +18,10 @@ function Reservas() {
 
   const load = useCallback(async () => {
     if (!supabase) return;
+    const { data: { user } } = await supabase.auth.getUser();
     const { data } = await supabase.from("bookings")
       .select("id, status, class_sessions ( date, start_time, end_time )")
+      .eq("profile_id", user?.id)
       .order("booked_at", { ascending: false });
     setRows(data ?? []);
   }, []);
@@ -27,8 +29,9 @@ function Reservas() {
 
   async function cancelar(id: string) {
     if (!supabase) return; setBusy(id);
-    await supabase.from("bookings").update({ status: "cancelled", cancelled_at: new Date().toISOString() }).eq("id", id);
-    setBusy(""); await load();
+    const { error } = await supabase.rpc("cancel_my_booking", { p_booking_id: id });
+    setBusy("");
+    if (!error) await load();
   }
 
   const t = today();
