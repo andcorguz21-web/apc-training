@@ -18,7 +18,8 @@ function mapError(msg: string) {
   const m = msg.toUpperCase();
   if (m.includes("CLASS_FULL")) return "Esa clase ya se llenó.";
   if (m.includes("NO_ACTIVE_MEMBERSHIP")) return "Tu mensualidad no cubre esa fecha.";
-  if (m.includes("DUPLICATE")) return "Ya estás anotado en esa clase.";
+  if (m.includes("BOOKING_TOO_EARLY")) return "Todavía no podés reservar esa fecha.";
+  if (m.includes("DUPLICATE") || m.includes("ALREADY_BOOKED")) return "Ya tenés una reserva activa en esa clase.";
   return "No se pudo reservar. Intentá de nuevo.";
 }
 
@@ -31,6 +32,7 @@ function Reservar() {
   const [classes, setClasses] = useState<Cls[]>([]);
   const [myBk, setMyBk] = useState<Record<string, Bk>>({});
   const [mems, setMems] = useState<Mem[]>([]);
+  const [roster, setRoster] = useState<Record<string, string[]>>({});
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
@@ -55,7 +57,16 @@ function Reservar() {
     setMems((mm.data as Mem[]) ?? []);
   }, []);
 
+  const loadRoster = useCallback(async (d: string) => {
+    if (!supabase || !d) return;
+    const { data } = await supabase.rpc("class_roster_day", { p_date: d });
+    const m: Record<string, string[]> = {};
+    ((data as any[]) ?? []).forEach((r) => (m[r.class_session_id] ||= []).push(r.display_name));
+    setRoster(m);
+  }, []);
+
   useEffect(() => { loadAll(tenantId); }, [tenantId, loadAll]);
+  useEffect(() => { if (selected) loadRoster(selected); }, [selected, loadRoster]);
   useEffect(() => { if (!selected && classes.length) setSelected(days.find((d) => byDay[d]?.length) || days[0]); }, [classes, byDay, days, selected]);
 
   async function reservar(c: Cls) {
@@ -63,14 +74,15 @@ function Reservar() {
     const mem = mems.find((m) => m.start_date <= c.date && c.date <= m.end_date);
     const args = mem ? { p_class_session_id: c.id, p_payment_kind: "membership", p_membership_id: mem.id } : { p_class_session_id: c.id, p_payment_kind: "drop_in", p_membership_id: null };
     const { error } = await supabase.rpc("create_booking", args); setBusy("");
-    if (error) { setMsg(mapError(error.message)); return; } await loadAll(tenantId);
+    if (error) { setMsg(mapError(error.message)); return; }
+    await loadAll(tenantId); await loadRoster(c.date);
   }
   async function cancelar(id: string) {
     if (!supabase) return; setBusy(id);
     const { error } = await supabase.rpc("cancel_my_booking", { p_booking_id: id });
     setBusy("");
     if (error) { setMsg("No se pudo cancelar. Reintentá."); return; }
-    await loadAll(tenantId);
+    await loadAll(tenantId); await loadRoster(selected);
   }
 
   const list = byDay[selected] || [];
@@ -95,6 +107,7 @@ function Reservar() {
         <div className="grid">
           {list.map((c, i) => {
             const mine = myBk[c.id]; const left = c.capacity - c.booked_count; const full = left <= 0;
+            const who = roster[c.id] || [];
             return (
               <article key={c.id} className={"cls" + (mine ? " is-mine" : full ? " is-full" : "")} style={{ animationDelay: `${i * 0.03}s` }}>
                 <div className="cls-time"><span className="cls-h">{hhmm(c.start_time)}</span><span className="cls-range">a {hhmm(c.end_time)}</span></div>
@@ -107,6 +120,12 @@ function Reservar() {
                     : full ? <span className="pill" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>Lleno</span>
                     : <button className="btn btn-primary" disabled={busy === c.id} onClick={() => reservar(c)}>{busy === c.id ? "…" : "Reservar"}</button>}
                 </div>
+                {who.length > 0 && (
+                  <div className="who">
+                    <span className="who-lbl">En esta clase</span>
+                    <div className="who-list">{who.map((n, k) => <span className="who-chip" key={k}>{n}</span>)}</div>
+                  </div>
+                )}
               </article>
             );
           })}
@@ -143,6 +162,10 @@ function Reservar() {
         .cls-act{display:flex;align-items:center;gap:10px;width:100%}.cls-act .btn{flex:1}
         @media(min-width:680px){.cls-act{width:auto;margin-left:auto}.cls-act .btn{flex:none}}
         .st{font-size:13px;font-weight:700}.empty{text-align:center;color:var(--muted);padding:48px 0}
+        .who{flex-basis:100%;display:flex;flex-direction:column;gap:7px;padding-top:13px;border-top:1px solid var(--line)}
+        .who-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--faint)}
+        .who-list{display:flex;flex-wrap:wrap;gap:6px}
+        .who-chip{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-pill);padding:4px 10px;font-size:12px;color:var(--muted);white-space:nowrap}
       `}</style>
     </div>
   );
